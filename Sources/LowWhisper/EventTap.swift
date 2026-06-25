@@ -132,56 +132,61 @@ public class EventTapManager {
     private func handleGlobeKeyPress() {
         let now = Date()
         let timeSinceLastRelease = now.timeIntervalSince(lastReleaseTime)
-        
-        // Cancel any pending PTT stop task from a quick tap release
+
         stopTask?.cancel()
         stopTask = nil
-        
-        if !isRecording {
+
+        if isRecording {
+            if recordingMode == .toggle {
+                // Already locked in toggle mode → press stops it
+                delegate?.eventTapGlobeKeyDidTriggerStop()
+                print("EventTap: Globe press triggered stop for continuous recording.")
+            } else if timeSinceLastRelease < doublePressThreshold {
+                // Second quick press while PTT is active → upgrade to toggle (lock recording on)
+                recordingMode = .toggle
+                delegate?.eventTapGlobeKeyDidDoublePress()
+                lastPressTime = now
+                print("EventTap: Double press detected! Switched PTT to continuous recording.")
+            }
+            // else: hold during active PTT → do nothing, release will stop it
+        } else {
             if timeSinceLastRelease < doublePressThreshold {
-                // Double press to toggle continuous recording
+                // Double tap from idle → start toggle recording
                 recordingMode = .toggle
                 delegate?.eventTapGlobeKeyDidDoublePress()
                 print("EventTap: Double press detected! Continuous recording started.")
             } else {
-                // Initial press (start as Push-to-Talk)
+                // Fresh single press → PTT
                 recordingMode = .pushToTalk
                 delegate?.eventTapGlobeKeyDidPressDown()
                 print("EventTap: Single press detected! Push-to-talk recording started.")
             }
             lastPressTime = now
-        } else {
-            // If already recording in toggle mode, a single press stops it
-            if recordingMode == .toggle {
-                delegate?.eventTapGlobeKeyDidTriggerStop()
-                print("EventTap: Globe press triggered stop for continuous recording.")
-            }
         }
     }
-    
+
     private func handleGlobeKeyRelease() {
         lastReleaseTime = Date()
+
+        // In toggle mode, key release never stops recording
+        guard recordingMode == .pushToTalk else { return }
+
         let pressDuration = lastReleaseTime.timeIntervalSince(lastPressTime)
-        
-        if recordingMode == .pushToTalk {
-            if pressDuration > 0.25 {
-                // User held it and released -> Stop immediately
-                delegate?.eventTapGlobeKeyDidReleaseUp()
-                print("EventTap: Held Globe key released. Stopping recording.")
-            } else {
-                // Quick tap release. Wait to check if it's the first tap of a double tap.
-                let task = DispatchWorkItem { [weak self] in
-                    guard let self = self else { return }
-                    if self.recordingMode == .pushToTalk {
-                        self.delegate?.eventTapGlobeKeyDidReleaseUp()
-                        print("EventTap: Single quick tap timeout. Stopping recording.")
-                    }
+        if pressDuration > 0.25 {
+            // User held and released → stop immediately
+            delegate?.eventTapGlobeKeyDidReleaseUp()
+            print("EventTap: Held Globe key released. Stopping recording.")
+        } else {
+            // Quick tap → wait briefly to see if a second tap follows (double press)
+            let task = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                if self.recordingMode == .pushToTalk {
+                    self.delegate?.eventTapGlobeKeyDidReleaseUp()
+                    print("EventTap: Single quick tap timeout. Stopping recording.")
                 }
-                self.stopTask = task
-                // Wait 0.25s to see if the second click of a double tap happens
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: task)
             }
+            self.stopTask = task
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: task)
         }
-        // If mode is .toggle, do nothing on release because we want continuous recording!
     }
 }

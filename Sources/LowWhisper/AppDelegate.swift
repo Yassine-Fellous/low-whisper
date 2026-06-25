@@ -156,7 +156,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, AudioEngineManagerDelegate, 
     // MARK: - AudioEngineManagerDelegate
     
     func audioEngineDidStartRecording() {
-        eventTap.setRecordingState(isRecording: true, mode: eventTapGlobeRecordingMode)
         overlayWindow?.updateState(.listening(amplitude: 0.0))
         overlayWindow?.show()
     }
@@ -212,18 +211,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, AudioEngineManagerDelegate, 
         }
     }
     
-    // MARK: - EventTapManagerDelegate / Helpers
-    
-    private var eventTapGlobeRecordingMode: EventTapManager.RecordingMode {
-        switch eventTap.isTrusted() {
-        case true:
-            // Since we set it in press down/double press, retrieve or infer it
-            return .pushToTalk
-        case false:
-            return .none
-        }
-    }
-    
+    // MARK: - EventTapManagerDelegate
+
     func eventTapGlobeKeyDidPressDown() {
         guard isModelLoaded else { return }
         audioEngine.startRecording()
@@ -236,7 +225,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, AudioEngineManagerDelegate, 
     func eventTapGlobeKeyDidDoublePress() {
         guard isModelLoaded else { return }
         eventTap.setRecordingState(isRecording: true, mode: .toggle)
-        audioEngine.startRecording()
+        if !audioEngine.isRecordingAudio() {
+            audioEngine.startRecording()
+        }
+        // If PTT was already active, recording continues — we just locked it in toggle mode
     }
     
     func eventTapGlobeKeyDidTriggerStop() {
